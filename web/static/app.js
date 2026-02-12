@@ -18,6 +18,11 @@ const state = {
     allSearchResults: [],
     cardStyle: 1,
     votes: {},
+    // Chat state
+    chatOpen: false,
+    chatHistory: [],
+    chatStreaming: false,
+    chatAbortController: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -74,19 +79,54 @@ function getDealDesc(deal) { return deal.description || deal.offer_description |
 function getDealCategory(deal) { return deal.category || deal.offer_category || ''; }
 function getDealPgm(deal) { return deal.offerPgm || deal.offer_pgm || ''; }
 
-function priceBlock(deal) {
-    const salePrice = deal.productPrice;
-    const regPrice = deal.productBasePrice;
-    if (!salePrice && !regPrice) return '';
-    const hasSale = regPrice && salePrice && regPrice > salePrice;
-    if (hasSale) {
-        return `<div class="card-prices">
-            <span class="price-sale">$${Number(salePrice).toFixed(2)}</span>
-            <span class="price-reg">$${Number(regPrice).toFixed(2)}</span>
-        </div>`;
+function computeFinalPrice(deal) {
+    const memberPrice = deal.productPrice;
+    const offerPrice = getDealPrice(deal);
+    if (!memberPrice || !offerPrice) return null;
+
+    // Dollar OFF: "$2.00 OFF" → subtract from member price
+    const offMatch = offerPrice.match(/\$(\d+(?:\.\d+)?)\s*OFF/i);
+    if (offMatch) {
+        const discount = parseFloat(offMatch[1]);
+        const final = memberPrice - discount;
+        return final > 0 ? final : 0;
     }
-    const p = salePrice || regPrice;
-    return `<div class="card-prices"><span class="price-current">$${Number(p).toFixed(2)}</span></div>`;
+
+    // FREE
+    if (/FREE/i.test(offerPrice)) return 0;
+
+    // Fixed price: "$4.99" (no OFF, no other keywords)
+    const fixedMatch = offerPrice.match(/^\$(\d+(?:\.\d+)?)$/);
+    if (fixedMatch) return parseFloat(fixedMatch[1]);
+
+    return null;
+}
+
+function priceBlock(deal) {
+    const memberPrice = deal.productPrice;
+    const regPrice = deal.productBasePrice;
+    if (!memberPrice && !regPrice) return '';
+
+    const hasMemberDiscount = regPrice && memberPrice && regPrice > memberPrice;
+    const finalPrice = computeFinalPrice(deal);
+
+    let html = '<div class="card-prices">';
+
+    // Regular price (crossed out if member discount exists)
+    if (hasMemberDiscount) {
+        html += `<span class="price-label">Reg</span><span class="price-reg">$${Number(regPrice).toFixed(2)}</span>`;
+        html += `<span class="price-label">Member</span><span class="price-member">$${Number(memberPrice).toFixed(2)}</span>`;
+    } else if (memberPrice) {
+        html += `<span class="price-label">Price</span><span class="price-current">$${Number(memberPrice).toFixed(2)}</span>`;
+    }
+
+    // Final price after coupon
+    if (finalPrice !== null) {
+        html += `<span class="price-label price-label-final">Final</span><span class="price-final">$${Number(finalPrice).toFixed(2)}</span>`;
+    }
+
+    html += '</div>';
+    return html;
 }
 
 function parseLimit(deal) {
@@ -823,6 +863,324 @@ nextBtn.addEventListener('click', () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 });
+
+/* ===== Chat ===== */
+
+const chatToggle = $('#chat-toggle');
+const chatOverlay = $('#chat-overlay');
+const chatPanel = $('#chat-panel');
+const chatClose = $('#chat-close');
+const chatMessages = $('#chat-messages');
+const chatWelcome = $('#chat-welcome');
+const chatInput = $('#chat-input');
+const chatSend = $('#chat-send');
+const chatClear = $('#chat-clear');
+
+function clearChat() {
+    state.chatHistory = [];
+    chatMessages.innerHTML = '';
+    chatMessages.appendChild(chatWelcome);
+    chatWelcome.style.display = '';
+    if (state.chatAbortController) {
+        state.chatAbortController.abort();
+        state.chatAbortController = null;
+    }
+    state.chatStreaming = false;
+    chatSend.disabled = false;
+}
+
+chatClear.addEventListener('click', clearChat);
+
+function openChat() {
+    state.chatOpen = true;
+    chatPanel.classList.add('open');
+    chatOverlay.classList.add('visible');
+    chatToggle.classList.add('hidden');
+    chatInput.focus();
+}
+
+function closeChat() {
+    state.chatOpen = false;
+    chatPanel.classList.remove('open');
+    chatOverlay.classList.remove('visible');
+    chatToggle.classList.remove('hidden');
+}
+
+chatToggle.addEventListener('click', openChat);
+chatClose.addEventListener('click', closeChat);
+chatOverlay.addEventListener('click', closeChat);
+
+/* Example prompt buttons */
+chatWelcome.querySelectorAll('.chat-example-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const prompt = btn.dataset.prompt;
+        sendChatMessage(prompt);
+    });
+});
+
+/* Auto-resize textarea */
+chatInput.addEventListener('input', () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+});
+
+/* Enter to send, Shift+Enter for newline */
+chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const msg = chatInput.value.trim();
+        if (msg && !state.chatStreaming) sendChatMessage(msg);
+    }
+});
+
+chatSend.addEventListener('click', () => {
+    const msg = chatInput.value.trim();
+    if (msg && !state.chatStreaming) sendChatMessage(msg);
+});
+
+function addChatMessage(role, content) {
+    // Hide welcome screen
+    if (chatWelcome) chatWelcome.style.display = 'none';
+
+    const msg = document.createElement('div');
+    msg.className = `chat-msg ${role}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-msg-avatar';
+    avatar.textContent = role === 'assistant' ? 'S' : 'U';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-msg-bubble';
+    bubble.textContent = content || '';
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    chatMessages.appendChild(msg);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return bubble;
+}
+
+function addThinkingIndicator() {
+    const el = document.createElement('div');
+    el.className = 'chat-thinking';
+    el.id = 'chat-thinking';
+    el.innerHTML = `
+        <div class="chat-thinking-dots"><span></span><span></span><span></span></div>
+        <span>Searching deals...</span>
+    `;
+    chatMessages.appendChild(el);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return el;
+}
+
+function removeThinkingIndicator() {
+    const el = document.getElementById('chat-thinking');
+    if (el) el.remove();
+}
+
+function chatPriceBlock(deal) {
+    const memberPrice = deal.productPrice;
+    const regPrice = deal.productBasePrice;
+    if (!memberPrice && !regPrice) return '';
+
+    const hasMemberDiscount = regPrice && memberPrice && regPrice > memberPrice;
+    const finalPrice = computeFinalPrice(deal);
+
+    let html = '<div class="chat-deal-final-price">';
+
+    if (hasMemberDiscount) {
+        html += `<span class="chat-price-reg">$${Number(regPrice).toFixed(2)}</span>`;
+        html += `<span class="chat-price-member">$${Number(memberPrice).toFixed(2)}</span>`;
+    } else if (memberPrice) {
+        html += `<span class="chat-price-current">$${Number(memberPrice).toFixed(2)}</span>`;
+    }
+
+    if (finalPrice !== null) {
+        html += `<span class="chat-price-final">$${Number(finalPrice).toFixed(2)}</span>`;
+    }
+
+    html += '</div>';
+    return html;
+}
+
+function createMiniDealCard(deal) {
+    const card = document.createElement('div');
+    card.className = 'chat-deal-card';
+
+    const imgUrl = deal.productImageUrl || deal.dealImageUrl || '';
+    const name = deal.offer_name || deal.name || '';
+    const price = deal.offer_price || deal.offerPrice || '';
+
+    card.innerHTML = `
+        ${imgUrl ? `<img class="chat-deal-img" src="${imgUrl}" alt="" onerror="this.style.display='none'">` : ''}
+        <div class="chat-deal-info">
+            <div class="chat-deal-name" title="${name}">${name}</div>
+            <div class="chat-deal-price">${price}</div>
+            ${chatPriceBlock(deal)}
+        </div>
+        <button class="chat-deal-cta">Clip</button>
+    `;
+
+    const cta = card.querySelector('.chat-deal-cta');
+    cta.addEventListener('click', (e) => {
+        e.stopPropagation();
+        cta.textContent = 'Clipped!';
+        cta.classList.add('clipped');
+    });
+
+    return card;
+}
+
+function addDealCards(deals) {
+    const container = document.createElement('div');
+    container.className = 'chat-deals';
+    const shown = deals.slice(0, 8);
+    shown.forEach(deal => {
+        container.appendChild(createMiniDealCard(deal));
+    });
+    if (deals.length > 8) {
+        const more = document.createElement('div');
+        more.style.cssText = 'font-size:0.78rem;color:var(--text-light);padding:4px 0;';
+        more.textContent = `+ ${deals.length - 8} more deals`;
+        container.appendChild(more);
+    }
+    chatMessages.appendChild(container);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function addSuggestionChips(suggestions) {
+    if (!suggestions || suggestions.length === 0) return;
+    const container = document.createElement('div');
+    container.className = 'chat-suggestions';
+    suggestions.forEach(text => {
+        const chip = document.createElement('button');
+        chip.className = 'chat-suggestion-chip';
+        chip.textContent = text;
+        chip.addEventListener('click', () => {
+            container.remove();
+            sendChatMessage(text);
+        });
+        container.appendChild(chip);
+    });
+    chatMessages.appendChild(container);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function sendChatMessage(message) {
+    if (state.chatStreaming) return;
+    state.chatStreaming = true;
+    chatSend.disabled = true;
+
+    // Show user message
+    addChatMessage('user', message);
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+
+    // Build history for server (exclude system — server injects it)
+    const historyForServer = state.chatHistory.map(h => ({
+        role: h.role,
+        content: h.content,
+    }));
+
+    // Add to local history
+    state.chatHistory.push({ role: 'user', content: message });
+
+    // Create assistant bubble for streaming
+    let assistantBubble = null;
+    let fullResponse = '';
+    let thinkingEl = null;
+
+    try {
+        state.chatAbortController = new AbortController();
+        const resp = await fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, history: historyForServer }),
+            signal: state.chatAbortController.signal,
+        });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data:')) continue;
+                const payload = line.slice(5).trim();
+                if (payload === '[END]') continue;
+
+                let event;
+                try { event = JSON.parse(payload); } catch { continue; }
+
+                switch (event.type) {
+                    case 'thinking':
+                        thinkingEl = addThinkingIndicator();
+                        break;
+
+                    case 'guardrail':
+                        assistantBubble = addChatMessage('assistant', event.message);
+                        break;
+
+                    case 'deals':
+                        removeThinkingIndicator();
+                        if (event.deals && event.deals.length > 0) {
+                            addDealCards(event.deals);
+                        }
+                        break;
+
+                    case 'token':
+                        removeThinkingIndicator();
+                        if (!assistantBubble) {
+                            assistantBubble = addChatMessage('assistant', '');
+                            assistantBubble.classList.add('streaming');
+                        }
+                        fullResponse += event.content;
+                        assistantBubble.textContent = fullResponse;
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                        break;
+
+                    case 'done':
+                        removeThinkingIndicator();
+                        if (assistantBubble) {
+                            assistantBubble.classList.remove('streaming');
+                            // Clean suggestion line from displayed text
+                            const text = assistantBubble.textContent;
+                            const sugIdx = text.indexOf('SUGGESTIONS:');
+                            if (sugIdx > -1) {
+                                assistantBubble.textContent = text.substring(0, sugIdx).trim();
+                            }
+                        }
+                        if (event.full_response) {
+                            state.chatHistory.push({
+                                role: 'assistant',
+                                content: event.full_response,
+                            });
+                        }
+                        if (event.suggestions && event.suggestions.length > 0) {
+                            addSuggestionChips(event.suggestions);
+                        }
+                        break;
+                }
+            }
+        }
+    } catch (err) {
+        if (err.name !== 'AbortError') {
+            removeThinkingIndicator();
+            addChatMessage('assistant', 'Something went wrong. Please try again.');
+        }
+    } finally {
+        state.chatStreaming = false;
+        chatSend.disabled = false;
+        state.chatAbortController = null;
+    }
+}
 
 /* ===== Init ===== */
 

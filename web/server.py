@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -345,3 +345,44 @@ async def get_categories():
         "offerTypes": _offer_types,
         "dealTypes": _deal_types,
     }
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(request: Request):
+    from search.chat import chat_stream, is_on_topic
+
+    body = await request.json()
+    message = body.get("message", "").strip()
+    history = body.get("history", [])
+
+    if not message:
+        return JSONResponse({"error": "message is required"}, status_code=400)
+
+    async def event_generator():
+        loop = asyncio.get_event_loop()
+
+        # Run chat_stream in executor (it's synchronous with Groq calls)
+        def _run_chat():
+            return list(chat_stream(message, history, _records, _embeddings, _model))
+
+        events = await loop.run_in_executor(None, _run_chat)
+
+        for event in events:
+            if event["type"] == "deals":
+                # Enrich deal results with image URLs, pricing, etc.
+                enriched = [_deal_result_to_dict(d) for d in event["deals"]]
+                yield f"data: {json.dumps({'type': 'deals', 'deals': enriched})}\n\n"
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
+
+        yield "data: [END]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

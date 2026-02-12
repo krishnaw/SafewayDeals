@@ -102,6 +102,60 @@
         </div>
     </main>
 
+    <!-- Chat toggle button -->
+    <button id="chat-toggle" class="chat-toggle" title="Chat with Safeway Deals Assistant">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+    </button>
+
+    <!-- Chat overlay -->
+    <div id="chat-overlay" class="chat-overlay"></div>
+
+    <!-- Chat panel -->
+    <div id="chat-panel" class="chat-panel">
+        <div class="chat-header">
+            <div class="chat-header-title">
+                <div class="chat-avatar">S</div>
+                <div>
+                    <div class="chat-title">Deals Assistant</div>
+                    <div class="chat-subtitle">Ask about deals, meals & savings</div>
+                </div>
+            </div>
+            <div class="chat-header-actions">
+                <button id="chat-clear" class="chat-header-btn" title="New chat">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                </button>
+                <button id="chat-close" class="chat-close" title="Close chat">&times;</button>
+            </div>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="chat-welcome" id="chat-welcome">
+                <div class="chat-welcome-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <p class="chat-welcome-text">Hi! I can help you find deals, plan meals, and discover savings at Safeway.</p>
+                <div class="chat-examples">
+                    <button class="chat-example-btn" data-prompt="What snacks are on sale?">What snacks are on sale?</button>
+                    <button class="chat-example-btn" data-prompt="Help me plan a healthy dinner">Help me plan a healthy dinner</button>
+                    <button class="chat-example-btn" data-prompt="Show me the best deals this week">Show me the best deals this week</button>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <textarea id="chat-input" class="chat-input" placeholder="Ask about deals..." rows="1"></textarea>
+            <button id="chat-send" class="chat-send" title="Send message">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
     <script src="/static/app.js"></script>
 </body>
 </html>

@@ -19,6 +19,9 @@ node_modules/
 .vscode/
 .idea/
 
+# Chrome profile (preserves Safeway login sessions)
+.chrome-profile/
+
 # OS
 .DS_Store
 Thumbs.db

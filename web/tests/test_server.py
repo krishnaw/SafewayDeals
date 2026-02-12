@@ -254,3 +254,95 @@ class TestNLQSearchStream:
             assert worst_score >= top_score * 0.40, (
                 f"Noisy tail: worst={worst_score:.3f}, top={top_score:.3f}"
             )
+
+
+def _parse_chat_sse(text: str) -> list[dict]:
+    """Parse chat SSE response into event dicts."""
+    events = []
+    for line in text.strip().split("\n"):
+        if not line.startswith("data:"):
+            continue
+        payload = line[len("data:"):].strip()
+        if payload == "[END]":
+            continue
+        try:
+            events.append(json.loads(payload))
+        except json.JSONDecodeError:
+            pass
+    return events
+
+
+class TestChatEndpoint:
+    """Tests for the POST /api/chat/stream endpoint."""
+
+    def test_requires_message(self, client):
+        resp = client.post("/api/chat/stream", json={})
+        assert resp.status_code == 400
+
+    def test_returns_sse(self, client):
+        resp = client.post("/api/chat/stream", json={"message": "hello"})
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+
+    def test_returns_events(self, client):
+        resp = client.post("/api/chat/stream", json={"message": "hello"})
+        text = resp.text
+        assert "data:" in text
+        assert "[END]" in text
+
+    def test_chat_has_done_event(self, client):
+        resp = client.post("/api/chat/stream", json={"message": "hello"})
+        events = _parse_chat_sse(resp.text)
+        types = [e.get("type") for e in events]
+        assert "done" in types
+
+    def test_accepts_history(self, client):
+        history = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "Hello! How can I help?"},
+        ]
+        resp = client.post("/api/chat/stream", json={
+            "message": "show me snacks",
+            "history": history,
+        })
+        assert resp.status_code == 200
+        events = _parse_chat_sse(resp.text)
+        assert len(events) > 0
+
+
+class TestChatGuardrails:
+    """Tests for chat guardrail enforcement."""
+
+    def test_blocks_politics(self, client):
+        resp = client.post("/api/chat/stream", json={
+            "message": "who is the president"
+        })
+        events = _parse_chat_sse(resp.text)
+        types = [e.get("type") for e in events]
+        assert "guardrail" in types
+        guardrail_event = next(e for e in events if e["type"] == "guardrail")
+        assert "grocery" in guardrail_event["message"].lower() or "deals" in guardrail_event["message"].lower()
+
+    def test_blocks_coding(self, client):
+        resp = client.post("/api/chat/stream", json={
+            "message": "write me python code"
+        })
+        events = _parse_chat_sse(resp.text)
+        types = [e.get("type") for e in events]
+        assert "guardrail" in types
+
+    def test_allows_grocery_queries(self, client):
+        resp = client.post("/api/chat/stream", json={
+            "message": "what snacks are on sale"
+        })
+        events = _parse_chat_sse(resp.text)
+        types = [e.get("type") for e in events]
+        assert "guardrail" not in types
+
+    def test_allows_recipe_queries(self, client):
+        resp = client.post("/api/chat/stream", json={
+            "message": "recipe for chicken soup"
+        })
+        events = _parse_chat_sse(resp.text)
+        types = [e.get("type") for e in events]
+        assert "guardrail" not in types
