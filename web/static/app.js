@@ -16,6 +16,7 @@ const state = {
     searchEventSource: null,
     debounceTimer: null,
     allSearchResults: [],
+    renderedDeals: [],
     cardStyle: 1,
     votes: {},
     // Chat state
@@ -449,6 +450,7 @@ function startSearch(query) {
     state.searchMode = true;
     state.searchQuery = query;
     state.allSearchResults = [];
+    state.renderedDeals = [];
     grid.innerHTML = '';
     showLoading(true);
     pagination.classList.add('hidden');
@@ -488,6 +490,7 @@ function startSearch(query) {
             batch.forEach((deal) => {
                 if (matchesFilters(deal)) {
                     grid.appendChild(createDealCard(deal));
+                    state.renderedDeals.push(deal);
                     totalRendered++;
                 }
             });
@@ -538,6 +541,7 @@ function applyClientFilters() {
 
     const filtered = state.allSearchResults.filter(matchesFilters);
     grid.innerHTML = '';
+    state.renderedDeals = filtered;
     filtered.forEach((deal) => {
         grid.appendChild(createDealCard(deal));
     });
@@ -568,6 +572,7 @@ function exitSearchMode() {
 
 function renderDeals(deals) {
     grid.innerHTML = '';
+    state.renderedDeals = deals;
     if (!deals.length) {
         grid.innerHTML = `<div class="empty-state"><div class="empty-icon">&#128722;</div><p>No deals found</p></div>`;
         return;
@@ -622,7 +627,7 @@ function saveVotes() {
 }
 
 function saveExampleDeal(styleNum) {
-    const deals = state.searchMode ? state.allSearchResults : state.deals;
+    const deals = state.renderedDeals;
     if (!deals || !deals.length) return;
     if (!state.votes[styleNum]) state.votes[styleNum] = { vote: null, exampleDeal: null };
     state.votes[styleNum].exampleDeal = {
@@ -924,8 +929,8 @@ chatWelcome.querySelectorAll('.chat-example-btn').forEach(btn => {
 const chatSummarize = $('#chat-summarize');
 chatSummarize.addEventListener('click', () => {
     if (state.chatStreaming) return;
-    const allDeals = state.searchMode ? state.allSearchResults : state.deals;
-    if (!allDeals || !allDeals.length) {
+    const rendered = state.renderedDeals;
+    if (!rendered || !rendered.length) {
         addChatMessage('assistant', 'No deals on screen.');
         return;
     }
@@ -947,7 +952,7 @@ chatSummarize.addEventListener('click', () => {
         addChatMessage('assistant', 'No deal cards visible on screen right now.');
         return;
     }
-    const visibleDeals = visibleIndices.map(i => allDeals[i]).filter(Boolean);
+    const visibleDeals = visibleIndices.map(i => rendered[i]).filter(Boolean);
     addChatMessage('user', 'Show me the deals on my screen');
     addChatMessage('assistant', `${visibleDeals.length} deal${visibleDeals.length !== 1 ? 's' : ''} on your screen:`);
     addDealCards(visibleDeals);

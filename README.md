@@ -9,7 +9,7 @@ Search, browse, and explore Safeway grocery deals with intelligent search, AI ch
 - **Natural language queries** — ask "something for a headache" and find Tylenol, Advil, etc.
 - **NLQ expansion** via Groq Llama 3.1 for multi-word query interpretation
 - **AI Chat** — conversational deal finder with streaming responses and deal cards
-- **10 card designs** — Coupon, Minimal, Split, Badge, Compact, Glass, Magazine, Dark, Price, List
+- **10 card designs** — Coupon, Minimal, Split, Badge, Compact, Glass, Magazine, Dark, Price, List (compact, image-forward layout)
 - **5 filters** — Category, Offer Type, Deal Type, Expiry, Has Products
 - **SSE streaming** — results appear progressively as they're found
 - **Deal-centric results** — searches across both deal and product fields, groups by offer
@@ -226,7 +226,7 @@ A conversational deal finder accessible via the chat panel in the web UI.
 - **System prompt guardrail** constrains responses to grocery/deals/meal planning
 - SSE streaming with mini deal cards rendered after the text response
 - Follow-up suggestion chips after every response (LLM-generated or default suggestions)
-- **Summarize visible deals** button — shows mini cards for deals currently in the browser viewport
+- **Summarize visible deals** button — shows mini cards for deals currently in the browser viewport (respects active search and filters)
 - Stateless: client sends conversation history with each request (truncated to last 10 turns)
 - Expiry filtering via `search_deals(query='*', expiry='week')` for expiring deal queries
 - Robust frontend: text always shows, deal cards always render when available, SUGGESTIONS never leak
