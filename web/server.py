@@ -111,6 +111,20 @@ def _enrich_deal_dict(deal: dict) -> dict:
         result["productImageUrl"] = first_prod.get("imageUrl", "")
         result["productPrice"] = first_prod.get("price")
         result["productBasePrice"] = first_prod.get("basePrice")
+        # Aggregate across all products
+        aisles = sorted({p.get("aisleLocation", "") for p in prods if p.get("aisleLocation")})
+        result["productAisles"] = aisles
+        ratings, total_reviews = [], 0
+        for p in prods:
+            try:
+                r = float(p.get("avgRating", "0"))
+                if r > 0:
+                    ratings.append(r)
+                    total_reviews += int(p.get("reviewCount", "0"))
+            except (ValueError, TypeError):
+                pass
+        result["productAvgRating"] = round(sum(ratings) / len(ratings), 1) if ratings else 0
+        result["productTotalReviews"] = total_reviews
     else:
         result["productCount"] = 0
 
@@ -144,6 +158,20 @@ def _deal_result_to_dict(deal_result) -> dict:
         first_prod = products_entry["products"][0]
         d["productPrice"] = first_prod.get("price")
         d["productBasePrice"] = first_prod.get("basePrice")
+        # Aggregate across all products
+        aisles = sorted({p.get("aisleLocation", "") for p in products_entry["products"] if p.get("aisleLocation")})
+        d["productAisles"] = aisles
+        ratings, total_reviews = [], 0
+        for p in products_entry["products"]:
+            try:
+                r = float(p.get("avgRating", "0"))
+                if r > 0:
+                    ratings.append(r)
+                    total_reviews += int(p.get("reviewCount", "0"))
+            except (ValueError, TypeError):
+                pass
+        d["productAvgRating"] = round(sum(ratings) / len(ratings), 1) if ratings else 0
+        d["productTotalReviews"] = total_reviews
 
     # Add dates from deal lookup
     d["startDate"] = raw_deal.get("startDate", "")

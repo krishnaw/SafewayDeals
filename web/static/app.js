@@ -368,6 +368,69 @@ function cardStyle10(deal) { // Grocery List
         </div>`;
 }
 
+function cardBack(deal) {
+    const name = escHtml(getDealName(deal));
+    const price = escHtml(getDealPrice(deal));
+    const desc = escHtml(getDealDesc(deal));
+    const category = escHtml(getDealCategory(deal));
+    const pgm = getDealPgm(deal);
+    const dealType = deal.dealType || '';
+    const imgUrl = getImageUrl(deal);
+    const limit = parseLimit(deal);
+    const days = daysUntilExpiry(deal);
+    const prodCount = deal.productCount || 0;
+
+    let chips = '';
+    if (category) chips += `<span class="card-back-chip">${category}</span>`;
+    if (pgm) chips += `<span class="card-back-chip">${escHtml(offerTypeLabel(pgm))}</span>`;
+    if (dealType) chips += `<span class="card-back-chip">${escHtml(dealType)}</span>`;
+    if (deal.seasonal) chips += `<span class="card-back-chip">Seasonal</span>`;
+    if (prodCount > 0) chips += `<span class="card-back-chip">${prodCount} product${prodCount !== 1 ? 's' : ''}</span>`;
+    if (limit !== null) chips += `<span class="card-back-chip">Limit ${limit}</span>`;
+    if (days !== null && days <= 30) {
+        chips += `<span class="card-back-chip">${days === 0 ? 'Expires today' : days + ' day' + (days !== 1 ? 's' : '') + ' left'}</span>`;
+    }
+    if (deal.productAisles && deal.productAisles.length) {
+        deal.productAisles.forEach(a => { chips += `<span class="card-back-chip">${escHtml(a)}</span>`; });
+    }
+
+    // Aggregated rating
+    let rating = '';
+    if (deal.productAvgRating && deal.productAvgRating > 0) {
+        const stars = deal.productAvgRating;
+        const count = deal.productTotalReviews || 0;
+        rating = `${'★'.repeat(Math.round(stars))}${'☆'.repeat(5 - Math.round(stars))} ${stars.toFixed(1)} (${count} review${count !== 1 ? 's' : ''})`;
+    }
+
+    let dates = '';
+    if (deal.startDate || deal.endDate) {
+        const fmt = (ts) => {
+            if (!ts) return '';
+            const d = new Date(parseInt(ts, 10));
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+        const start = fmt(deal.startDate);
+        const end = fmt(deal.endDate);
+        if (start && end) dates = `Valid: ${start} \u2013 ${end}`;
+        else if (end) dates = `Expires: ${end}`;
+    }
+
+    return `
+        <div class="card-back-header">
+            <img src="${imgUrl || DEFAULT_IMAGE}" alt="" class="card-back-thumb" onerror="this.src='${DEFAULT_IMAGE}'">
+            <div class="card-back-info">
+                <div class="card-back-title">${name}</div>
+                <div class="card-back-price">${price}</div>
+            </div>
+        </div>
+        ${priceBlock(deal)}
+        ${rating ? `<div class="card-back-rating">${rating}</div>` : ''}
+        <div class="card-back-desc">${desc}</div>
+        ${chips ? `<div class="card-back-chips">${chips}</div>` : ''}
+        ${dates ? `<div class="card-back-dates">${dates}</div>` : ''}
+        <button class="cta-btn cta-clip">Clip Coupon</button>`;
+}
+
 const CARD_RENDERERS = [null, cardStyle1, cardStyle2, cardStyle3, cardStyle4, cardStyle5,
     cardStyle6, cardStyle7, cardStyle8, cardStyle9, cardStyle10];
 
@@ -376,7 +439,7 @@ function createDealCard(deal) {
     const div = document.createElement('div');
     div.className = 'deal-card';
     div.dataset.cardStyle = state.cardStyle;
-    div.innerHTML = renderer(deal);
+    div.innerHTML = `<div class="card-inner"><div class="card-front">${renderer(deal)}</div><div class="card-back">${cardBack(deal)}</div></div>`;
     return div;
 }
 
@@ -779,14 +842,32 @@ const CTA_DONE_LABELS = {
 
 grid.addEventListener('click', (e) => {
     const btn = e.target.closest('.cta-btn');
-    if (!btn || btn.classList.contains('cta-clicked')) return;
-    btn.classList.add('cta-clicked');
-    for (const [cls, label] of Object.entries(CTA_DONE_LABELS)) {
-        if (btn.classList.contains(cls)) {
-            btn.textContent = label;
-            break;
+    if (btn) {
+        if (btn.classList.contains('cta-clicked')) return;
+        const card = btn.closest('.deal-card');
+        // Mark clicked CTA and sync state to the other side's CTA
+        if (card) {
+            card.querySelectorAll('.cta-btn').forEach(cta => {
+                if (!cta.classList.contains('cta-clicked')) {
+                    cta.classList.add('cta-clicked');
+                    for (const [cls, label] of Object.entries(CTA_DONE_LABELS)) {
+                        if (cta.classList.contains(cls)) {
+                            cta.textContent = label;
+                            break;
+                        }
+                    }
+                }
+            });
         }
+        // If CTA is on card-back, flip back after delay
+        if (btn.closest('.card-back') && card) {
+            setTimeout(() => card.classList.remove('flipped'), 600);
+        }
+        return;
     }
+    // Non-CTA click: toggle flip
+    const card = e.target.closest('.deal-card');
+    if (card) card.classList.toggle('flipped');
 });
 
 /* ===== Event Listeners ===== */
