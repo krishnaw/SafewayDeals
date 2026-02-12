@@ -363,7 +363,7 @@ async def chat_stream_endpoint(request: Request):
 
         # Run chat_stream in executor (it's synchronous with Groq calls)
         def _run_chat():
-            return list(chat_stream(message, history, _records, _embeddings, _model))
+            return list(chat_stream(message, history, _records, _embeddings, _model, _all_deals))
 
         events = await loop.run_in_executor(None, _run_chat)
 

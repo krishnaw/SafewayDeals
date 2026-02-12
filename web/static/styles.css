@@ -32,6 +32,7 @@ body {
     background: linear-gradient(135deg, var(--red-dark), var(--red));
     color: white;
     padding: 1.25rem 2rem;
+    padding-right: 440px;
     position: sticky;
     top: 0;
     z-index: 100;
@@ -134,9 +135,9 @@ body {
 
 /* ===== Filter Bar ===== */
 .main-content {
-    max-width: 1400px;
     margin: 0 auto;
     padding: 1.5rem 2rem 3rem;
+    margin-right: 420px;
 }
 
 .filter-bar {
@@ -388,11 +389,10 @@ body {
 /* ===== Deals Grid ===== */
 .deals-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 1.25rem;
 }
 
-@media (max-width: 1200px) { .deals-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 900px) { .deals-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .deals-grid { grid-template-columns: 1fr; } }
 
@@ -678,7 +678,7 @@ body {
 
 .deal-card[data-card-style="1"] .card-image-wrap {
     width: 100%;
-    height: 180px;
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -748,7 +748,7 @@ body {
 
 .deal-card[data-card-style="2"] .card-image-wrap {
     width: 100%;
-    height: 180px;
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -798,7 +798,7 @@ body {
 }
 
 .deal-card[data-card-style="3"] .card-image-top {
-    height: 180px;
+    height: 220px;
     background: #f9f9f9;
     display: flex;
     align-items: center;
@@ -879,7 +879,7 @@ body {
 }
 
 .deal-card[data-card-style="4"] .card-image-wrap {
-    height: 180px;
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1003,7 +1003,7 @@ body {
 
 .deal-card[data-card-style="6"] .card-image-wrap {
     width: 100%;
-    height: 180px;
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1055,7 +1055,7 @@ body {
 
 .deal-card[data-card-style="7"] .card-image-wrap {
     width: 100%;
-    height: 180px;
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1117,7 +1117,7 @@ body {
 
 .deal-card[data-card-style="8"] .card-image-wrap {
     width: 100%;
-    height: 180px;
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1238,7 +1238,7 @@ body {
 
 .deal-card[data-card-style="10"] .card-image-wrap {
     width: 100%;
-    height: 180px;
+    height: 220px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1373,55 +1373,21 @@ body {
     .deal-card[data-card-style="5"] { flex-direction: column; }
     .deal-card[data-card-style="5"] .card-image-side { width: 100%; min-height: 150px; }
 
-    .chat-panel { width: 100%; right: -100%; }
-    .chat-panel.open { right: 0; }
+    .chat-panel { width: 100%; position: relative; height: 50vh; }
+    .main-content { margin-right: 0; }
 }
 
-/* ===== Chat Toggle Button ===== */
-.chat-toggle {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: var(--red);
-    color: #fff;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 16px rgba(211, 47, 47, 0.35);
-    transition: transform 0.2s, box-shadow 0.2s;
-    z-index: 1000;
-}
-.chat-toggle:hover {
-    transform: scale(1.1);
-    box-shadow: 0 6px 24px rgba(211, 47, 47, 0.45);
-}
-.chat-toggle.hidden { display: none; }
+/* ===== Chat Toggle Button (hidden — chat is always open) ===== */
+.chat-toggle { display: none; }
 
-/* ===== Chat Overlay ===== */
-.chat-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.3);
-    z-index: 1001;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s;
-}
-.chat-overlay.visible {
-    opacity: 1;
-    pointer-events: auto;
-}
+/* ===== Chat Overlay (hidden — chat is always open) ===== */
+.chat-overlay { display: none; }
 
 /* ===== Chat Panel ===== */
 .chat-panel {
     position: fixed;
     top: 0;
-    right: -420px;
+    right: 0;
     width: 400px;
     height: 100vh;
     background: #fff;
@@ -1429,9 +1395,7 @@ body {
     display: flex;
     flex-direction: column;
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
-    transition: right 0.3s ease;
 }
-.chat-panel.open { right: 0; }
 
 .chat-header {
     display: flex;
@@ -1573,7 +1537,7 @@ body {
     border-bottom-left-radius: 4px;
 }
 .chat-msg.user .chat-msg-bubble {
-    background: var(--red);
+    background: #1565c0;
     color: #fff;
     border-bottom-right-radius: 4px;
 }
@@ -1689,19 +1653,50 @@ body {
     color: var(--text-light);
 }
 
+/* ===== Chat Quick Actions ===== */
+.chat-quick-actions {
+    display: flex;
+    padding: 8px 16px 0;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: #fff;
+}
+.chat-summarize-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid #1565c0;
+    border-radius: 20px;
+    background: #e8f0fe;
+    color: #1565c0;
+    font-size: 0.78rem;
+    font-family: var(--font);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+.chat-summarize-btn:hover {
+    background: #1565c0;
+    color: #fff;
+}
+.chat-summarize-btn svg {
+    flex-shrink: 0;
+}
+
 /* ===== Chat Input ===== */
 .chat-input-area {
     display: flex;
     align-items: flex-end;
     gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
+    padding: 8px 16px 12px;
     background: #fff;
     flex-shrink: 0;
 }
 .chat-input {
     flex: 1;
-    border: 1px solid var(--border);
+    border: 2px solid #1565c0;
     border-radius: 12px;
     padding: 10px 14px;
     font-size: 0.88rem;
@@ -1710,15 +1705,20 @@ body {
     max-height: 120px;
     line-height: 1.4;
     outline: none;
-    transition: border-color 0.15s;
+    background: #f0f4ff;
+    transition: border-color 0.15s, box-shadow 0.15s;
 }
-.chat-input:focus { border-color: var(--red); }
+.chat-input:focus {
+    border-color: #0d47a1;
+    box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.15);
+    background: #fff;
+}
 .chat-send {
     width: 38px;
     height: 38px;
     border: none;
     border-radius: 50%;
-    background: var(--red);
+    background: #1565c0;
     color: #fff;
     cursor: pointer;
     display: flex;
@@ -1727,7 +1727,7 @@ body {
     flex-shrink: 0;
     transition: background 0.15s, transform 0.1s;
 }
-.chat-send:hover { background: var(--red-dark); }
+.chat-send:hover { background: #0d47a1; }
 .chat-send:active { transform: scale(0.95); }
 .chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
 

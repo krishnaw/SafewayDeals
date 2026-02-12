@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import time
 from typing import Any, Generator
 
 import numpy as np
@@ -13,6 +15,35 @@ from .index import SearchRecord
 from .search import DealResult, search
 
 logger = logging.getLogger(__name__)
+
+
+def _days_until_expiry(end_date_str: str) -> int | None:
+    """Return days until deal expires, or None if no date."""
+    if not end_date_str:
+        return None
+    try:
+        end_ms = int(end_date_str)
+        now_ms = int(time.time() * 1000)
+        diff_days = (end_ms - now_ms) / (1000 * 60 * 60 * 24)
+        return max(0, int(diff_days))
+    except (ValueError, TypeError):
+        return None
+
+
+def _filter_by_expiry(deals: list[DealResult], expiry: str, deals_data: list[dict]) -> list[DealResult]:
+    """Filter DealResults by expiry window using raw deals_data for endDate."""
+    max_days = {"today": 0, "week": 7, "month": 30}.get(expiry)
+    if max_days is None:
+        return deals
+    # Build offer_id -> endDate lookup
+    end_dates = {d.get("offerId", ""): d.get("endDate", "") for d in deals_data}
+    filtered = []
+    for deal in deals:
+        end_date = end_dates.get(deal.offer_id, "")
+        days = _days_until_expiry(end_date)
+        if days is not None and days <= max_days:
+            filtered.append(deal)
+    return filtered
 
 _MODEL = "llama-3.1-8b-instant"
 
@@ -45,6 +76,9 @@ SYSTEM_PROMPT = (
     "search_deals calls with specific product terms. Example: for 'healthy dinner' call "
     "search_deals('chicken'), search_deals('salmon'), search_deals('salad'), search_deals('vegetables').\n"
     "- Keep queries to 1-2 words — product names or brands work best.\n"
+    "- For EXPIRING deals: use query='*' with the expiry filter. Example: "
+    "search_deals(query='*', expiry='week') for deals expiring this week, "
+    "search_deals(query='*', expiry='today') for deals expiring today.\n"
     "- When the user specifies a price limit (e.g. 'under $3', 'less than $5'), search for the "
     "products first, then ONLY include deals where the product price is at or below that limit. "
     "The product prices are shown next to product names in the search results.\n\n"
@@ -58,18 +92,23 @@ _SEARCH_TOOL = {
     "type": "function",
     "function": {
         "name": "search_deals",
-        "description": "Search current Safeway deals and coupons. Returns matching deals with names, prices, and categories.",
+        "description": "Search current Safeway deals and coupons. Returns matching deals with names, prices, and categories. Can also filter by expiry window.",
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query — use short, specific terms like 'chicken', 'yogurt', 'laundry detergent'",
+                    "description": "Search query — use short, specific terms like 'chicken', 'yogurt', 'laundry detergent'. Use '*' to match all deals (useful with expiry filter).",
                 },
                 "top_k": {
                     "type": "integer",
                     "description": "Max results to return (default 8)",
                     "default": 8,
+                },
+                "expiry": {
+                    "type": "string",
+                    "enum": ["today", "week", "month"],
+                    "description": "Filter deals expiring within this window: 'today', 'week' (7 days), or 'month' (30 days). Only use when user asks about expiring/ending deals.",
                 },
             },
             "required": ["query"],
@@ -92,7 +131,7 @@ _OFF_TOPIC_KEYWORDS = {
 _GROCERY_KEYWORDS = {
     "grocery", "food", "meal", "recipe", "cook", "bake", "eat", "drink",
     "snack", "breakfast", "lunch", "dinner", "deal", "coupon", "save",
-    "price", "buy", "shop", "safeway", "produce", "meat", "dairy",
+    "price", "buy", "shop", "safeway", "produce", "meat", "dairy", "expiring", "expire", "expiry",
     "bread", "cereal", "frozen", "canned", "organic", "healthy",
     "chicken", "beef", "pork", "fish", "salmon", "shrimp",
     "milk", "cheese", "yogurt", "egg", "butter",
@@ -181,19 +220,16 @@ def _make_done_event(full_response: str) -> dict:
 def _parse_suggestions(text: str) -> tuple[str, list[str]]:
     """Split response text into (main_response, suggestions_list).
 
-    Looks for a line starting with 'SUGGESTIONS:' and extracts pipe-separated suggestions.
+    Finds 'SUGGESTIONS:' anywhere in the text (may be inline or on its own line)
+    and extracts pipe-separated suggestions after it.
     """
-    lines = text.strip().split("\n")
-    suggestions = []
-    main_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.upper().startswith("SUGGESTIONS:"):
-            parts = stripped.split(":", 1)[1].strip()
-            suggestions = [s.strip() for s in parts.split("|") if s.strip()]
-        else:
-            main_lines.append(line)
-    return "\n".join(main_lines).strip(), suggestions
+    idx = text.upper().rfind("SUGGESTIONS:")
+    if idx >= 0:
+        before = text[:idx].strip()
+        after = text[idx + len("SUGGESTIONS:"):].strip()
+        suggestions = [s.strip() for s in after.split("|") if s.strip()]
+        return before, suggestions
+    return text.strip(), []
 
 
 def _extract_raw_tool_call(content: str) -> str | None:
@@ -232,6 +268,7 @@ def chat_stream(
     records: list[SearchRecord],
     embeddings: np.ndarray,
     model,
+    deals_data: list[dict] | None = None,
 ) -> Generator[dict, None, None]:
     """Stream chat response as SSE-ready event dicts.
 
@@ -292,8 +329,15 @@ def chat_stream(
                 if hits:
                     yield {"type": "deals", "deals": hits}
                 deal_context = format_deals_for_context(hits)
-                messages.append({"role": "assistant", "content": f"I found these deals for '{raw_query}'."})
-                messages.append({"role": "user", "content": f"Here are the search results:\n{deal_context}\n\nSummarize these deals for the customer in 2-3 sentences."})
+                count = len(hits)
+                messages.append({"role": "assistant", "content": f"I found {count} deal(s) for '{raw_query}'."})
+                messages.append({"role": "user", "content": (
+                    f"The customer can see the {count} deal card(s) above. "
+                    "Write a 1-sentence summary ONLY. "
+                    "Do NOT repeat deal names, prices, or product details — the cards show that. "
+                    "Do NOT invent or hallucinate any products or prices. "
+                    "End with SUGGESTIONS: line."
+                )})
                 stream = client.chat.completions.create(
                     model=_MODEL,
                     max_tokens=500,
@@ -315,16 +359,35 @@ def chat_stream(
         if tool_calls:
             # Execute search tool calls
             all_deals: list[DealResult] = []
+            expiry_filter = None
             for tc in tool_calls:
                 if tc.function.name == "search_deals":
                     args = json.loads(tc.function.arguments)
                     query = args.get("query", "")
                     top_k = args.get("top_k", 8)
+                    expiry_filter = args.get("expiry")
 
                     yield {"type": "thinking"}
 
-                    hits = search(query, records, embeddings, model, top_k=top_k)
-                    all_deals.extend(hits)
+                    if query == "*":
+                        # Wildcard: return all deals (for expiry-only queries)
+                        from .index import load_records as _lr
+                        all_offer_ids = {rec.offer_id for rec in records}
+                        for oid in list(all_offer_ids)[:200]:
+                            rec = next(r for r in records if r.offer_id == oid)
+                            all_deals.append(DealResult(
+                                offer_id=oid,
+                                offer_name=rec.offer_name,
+                                offer_price=rec.offer_price,
+                                offer_description=rec.offer_description,
+                                offer_category=rec.offer_category,
+                                offer_pgm=rec.offer_pgm,
+                                score=1.0,
+                                sources=["filter"],
+                            ))
+                    else:
+                        hits = search(query, records, embeddings, model, top_k=top_k)
+                        all_deals.extend(hits)
 
             # Deduplicate by offer_id, keep best score
             seen: dict[str, DealResult] = {}
@@ -332,6 +395,10 @@ def chat_stream(
                 if deal.offer_id not in seen or deal.score > seen[deal.offer_id].score:
                     seen[deal.offer_id] = deal
             unique_deals = sorted(seen.values(), key=lambda d: d.score, reverse=True)
+
+            # Apply expiry filter if requested
+            if expiry_filter and deals_data:
+                unique_deals = _filter_by_expiry(unique_deals, expiry_filter, deals_data)
 
             # Yield deal results for frontend rendering
             if unique_deals:
@@ -367,6 +434,18 @@ def chat_stream(
                     "tool_call_id": tc.id,
                     "content": deal_context,
                 })
+            # Instruct LLM to keep it brief — deal cards are shown visually
+            count = len(unique_deals)
+            messages.append({
+                "role": "user",
+                "content": (
+                    f"The customer can see the {count} deal card(s) above. "
+                    "Write a 1-sentence summary ONLY (e.g. 'Here are {count} dairy deals!'). "
+                    "Do NOT repeat deal names, prices, or product details — the cards show that. "
+                    "Do NOT invent or hallucinate any products or prices. "
+                    "End with SUGGESTIONS: line."
+                ),
+            })
 
             # Stream the final response
             stream = client.chat.completions.create(
@@ -401,8 +480,15 @@ def chat_stream(
                     yield {"type": "deals", "deals": hits}
 
                 deal_context = format_deals_for_context(hits)
-                messages.append({"role": "assistant", "content": f"I searched for '{raw_query}' and found these deals."})
-                messages.append({"role": "user", "content": f"Here are the search results:\n{deal_context}\n\nPlease summarize these deals for the customer."})
+                count = len(hits)
+                messages.append({"role": "assistant", "content": f"I found {count} deal(s) for '{raw_query}'."})
+                messages.append({"role": "user", "content": (
+                    f"The customer can see the {count} deal card(s) above. "
+                    "Write a 1-sentence summary ONLY. "
+                    "Do NOT repeat deal names, prices, or product details — the cards show that. "
+                    "Do NOT invent or hallucinate any products or prices. "
+                    "End with SUGGESTIONS: line."
+                )})
 
                 stream = client.chat.completions.create(
                     model=_MODEL,

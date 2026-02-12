@@ -56,16 +56,25 @@ function offerTypeLabel(pgm) {
 
 /* ===== Card Helpers ===== */
 
+const DEFAULT_IMAGE = "data:image/svg+xml," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">' +
+    '<rect width="120" height="120" fill="#f0f0f0"/>' +
+    '<g fill="none" stroke="#bbb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="30" y="35" width="60" height="50" rx="4"/>' +
+    '<circle cx="47" cy="52" r="7"/>' +
+    '<path d="M30 75 l20-18 12 10 16-14 12 12 v10 H30z" fill="#ddd" stroke="#bbb"/>' +
+    '</g>' +
+    '<text x="60" y="105" text-anchor="middle" fill="#bbb" font-family="sans-serif" font-size="10">No image</text>' +
+    '</svg>'
+);
+
 function getImageUrl(deal) {
     return deal.productImageUrl || deal.dealImageUrl || '';
 }
 
 function imgTag(url, cls, fallbackHtml) {
-    if (url) {
-        return `<img src="${url}" alt="" class="${cls}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='flex')">
-                <div class="no-image ${cls}" style="display:none">${fallbackHtml || 'No image'}</div>`;
-    }
-    return `<div class="no-image ${cls}">${fallbackHtml || 'No image'}</div>`;
+    const src = url || DEFAULT_IMAGE;
+    return `<img src="${src}" alt="" class="${cls}" loading="lazy" onerror="this.src='${DEFAULT_IMAGE}'">`;
 }
 
 function escHtml(str) {
@@ -894,21 +903,14 @@ chatClear.addEventListener('click', clearChat);
 function openChat() {
     state.chatOpen = true;
     chatPanel.classList.add('open');
-    chatOverlay.classList.add('visible');
-    chatToggle.classList.add('hidden');
-    chatInput.focus();
 }
 
 function closeChat() {
-    state.chatOpen = false;
-    chatPanel.classList.remove('open');
-    chatOverlay.classList.remove('visible');
-    chatToggle.classList.remove('hidden');
+    // Chat is always open — no-op
 }
 
-chatToggle.addEventListener('click', openChat);
-chatClose.addEventListener('click', closeChat);
-chatOverlay.addEventListener('click', closeChat);
+// Chat is permanently open
+openChat();
 
 /* Example prompt buttons */
 chatWelcome.querySelectorAll('.chat-example-btn').forEach(btn => {
@@ -916,6 +918,40 @@ chatWelcome.querySelectorAll('.chat-example-btn').forEach(btn => {
         const prompt = btn.dataset.prompt;
         sendChatMessage(prompt);
     });
+});
+
+/* Summarize visible deals button — shows only cards visible in viewport */
+const chatSummarize = $('#chat-summarize');
+chatSummarize.addEventListener('click', () => {
+    if (state.chatStreaming) return;
+    const allDeals = state.searchMode ? state.allSearchResults : state.deals;
+    if (!allDeals || !allDeals.length) {
+        addChatMessage('assistant', 'No deals on screen.');
+        return;
+    }
+    // Find deal cards actually visible in the viewport
+    const cards = Array.from(grid.querySelectorAll('.deal-card'));
+    const viewportTop = window.scrollY;
+    const viewportBottom = viewportTop + window.innerHeight;
+    const visibleIndices = [];
+    cards.forEach((card, i) => {
+        const rect = card.getBoundingClientRect();
+        const absTop = rect.top + window.scrollY;
+        const absBottom = rect.bottom + window.scrollY;
+        // Card is visible if at least partially in viewport
+        if (absBottom > viewportTop && absTop < viewportBottom) {
+            visibleIndices.push(i);
+        }
+    });
+    if (!visibleIndices.length) {
+        addChatMessage('assistant', 'No deal cards visible on screen right now.');
+        return;
+    }
+    const visibleDeals = visibleIndices.map(i => allDeals[i]).filter(Boolean);
+    addChatMessage('user', 'Show me the deals on my screen');
+    addChatMessage('assistant', `${visibleDeals.length} deal${visibleDeals.length !== 1 ? 's' : ''} on your screen:`);
+    addDealCards(visibleDeals);
+    addSuggestionChips();
 });
 
 /* Auto-resize textarea */
@@ -1007,26 +1043,33 @@ function createMiniDealCard(deal) {
     const card = document.createElement('div');
     card.className = 'chat-deal-card';
 
-    const imgUrl = deal.productImageUrl || deal.dealImageUrl || '';
+    const imgUrl = deal.productImageUrl || deal.dealImageUrl || DEFAULT_IMAGE;
     const name = deal.offer_name || deal.name || '';
     const price = deal.offer_price || deal.offerPrice || '';
 
-    card.innerHTML = `
-        ${imgUrl ? `<img class="chat-deal-img" src="${imgUrl}" alt="" onerror="this.style.display='none'">` : ''}
-        <div class="chat-deal-info">
-            <div class="chat-deal-name" title="${name}">${name}</div>
-            <div class="chat-deal-price">${price}</div>
-            ${chatPriceBlock(deal)}
-        </div>
-        <button class="chat-deal-cta">Clip</button>
-    `;
+    const img = document.createElement('img');
+    img.className = 'chat-deal-img';
+    img.src = imgUrl;
+    img.alt = '';
+    img.onerror = function() { this.onerror = null; this.src = DEFAULT_IMAGE; };
+    card.appendChild(img);
 
-    const cta = card.querySelector('.chat-deal-cta');
+    const info = document.createElement('div');
+    info.className = 'chat-deal-info';
+    info.innerHTML = `<div class="chat-deal-name" title="${escHtml(name)}">${escHtml(name)}</div>`
+        + `<div class="chat-deal-price">${escHtml(price)}</div>`
+        + chatPriceBlock(deal);
+    card.appendChild(info);
+
+    const cta = document.createElement('button');
+    cta.className = 'chat-deal-cta';
+    cta.textContent = 'Clip';
     cta.addEventListener('click', (e) => {
         e.stopPropagation();
         cta.textContent = 'Clipped!';
         cta.classList.add('clipped');
     });
+    card.appendChild(cta);
 
     return card;
 }
@@ -1048,11 +1091,29 @@ function addDealCards(deals) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+const _defaultSuggestions = [
+    "What snacks are on sale?",
+    "Find me dairy deals",
+    "Any deals expiring soon?",
+    "What beverages are discounted?",
+    "Show me the cheapest deals",
+    "Any pet food deals?",
+    "Find cereal deals",
+    "What cleaning products are on sale?",
+];
+
+function _pickSuggestions(count = 2) {
+    const shuffled = _defaultSuggestions.slice().sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count);
+}
+
 function addSuggestionChips(suggestions) {
-    if (!suggestions || suggestions.length === 0) return;
+    // Remove any existing suggestion chips first
+    chatMessages.querySelectorAll('.chat-suggestions').forEach(el => el.remove());
+    const items = (suggestions && suggestions.length > 0) ? suggestions : _pickSuggestions(2);
     const container = document.createElement('div');
     container.className = 'chat-suggestions';
-    suggestions.forEach(text => {
+    items.forEach(text => {
         const chip = document.createElement('button');
         chip.className = 'chat-suggestion-chip';
         chip.textContent = text;
@@ -1064,6 +1125,91 @@ function addSuggestionChips(suggestions) {
     });
     chatMessages.appendChild(container);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function _cleanChatText(text) {
+    let clean = text
+        .replace(/search_deals\([^)]*\)\s*\{[^}]*\}/g, '')
+        .replace(/<function=search_deals>[\s\S]*?<\/function>/g, '')
+        .replace(/\{"results":\s*\[[\s\S]*?\]\}/g, '')
+        .trim();
+    const sugIdx = clean.search(/\bSUGGESTIONS:/i);
+    if (sugIdx > -1) {
+        clean = clean.substring(0, sugIdx).trim();
+    }
+    return clean;
+}
+
+function _processSSELine(line, ctx) {
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (payload === '[END]') return;
+
+    let event;
+    try { event = JSON.parse(payload); } catch { return; }
+
+    switch (event.type) {
+        case 'thinking':
+            addThinkingIndicator();
+            break;
+
+        case 'guardrail':
+            removeThinkingIndicator();
+            ctx.assistantBubble = addChatMessage('assistant', event.message);
+            break;
+
+        case 'deals':
+            removeThinkingIndicator();
+            if (event.deals && event.deals.length > 0) {
+                ctx.pendingDeals = event.deals;
+            }
+            break;
+
+        case 'token':
+            removeThinkingIndicator();
+            if (!ctx.assistantBubble) {
+                ctx.assistantBubble = addChatMessage('assistant', '');
+                ctx.assistantBubble.classList.add('streaming');
+            }
+            ctx.fullResponse += event.content;
+            ctx.assistantBubble.textContent = _cleanChatText(ctx.fullResponse);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            break;
+
+        case 'done':
+            removeThinkingIndicator();
+
+            // Ensure assistant bubble exists
+            if (!ctx.assistantBubble) {
+                ctx.assistantBubble = addChatMessage('assistant', '');
+            }
+            ctx.assistantBubble.classList.remove('streaming');
+
+            // Use the backend's already-cleaned response
+            const finalText = (event.full_response || '').trim();
+            ctx.assistantBubble.textContent = finalText;
+
+            // Only remove bubble if truly empty AND no deals to show
+            if (!finalText && !ctx.pendingDeals) {
+                ctx.assistantBubble.closest('.chat-msg')?.remove();
+            }
+
+            // Render deal cards AFTER the text bubble
+            if (ctx.pendingDeals) {
+                addDealCards(ctx.pendingDeals);
+                ctx.pendingDeals = null;
+            }
+
+            if (event.full_response) {
+                state.chatHistory.push({
+                    role: 'assistant',
+                    content: event.full_response,
+                });
+            }
+            addSuggestionChips(event.suggestions);
+            ctx.doneReceived = true;
+            break;
+    }
 }
 
 async function sendChatMessage(message) {
@@ -1085,10 +1231,12 @@ async function sendChatMessage(message) {
     // Add to local history
     state.chatHistory.push({ role: 'user', content: message });
 
-    // Create assistant bubble for streaming
-    let assistantBubble = null;
-    let fullResponse = '';
-    let thinkingEl = null;
+    const ctx = {
+        assistantBubble: null,
+        fullResponse: '',
+        pendingDeals: null,
+        doneReceived: false,
+    };
 
     try {
         state.chatAbortController = new AbortController();
@@ -1112,68 +1260,30 @@ async function sendChatMessage(message) {
             buffer = lines.pop();
 
             for (const line of lines) {
-                if (!line.startsWith('data:')) continue;
-                const payload = line.slice(5).trim();
-                if (payload === '[END]') continue;
-
-                let event;
-                try { event = JSON.parse(payload); } catch { continue; }
-
-                switch (event.type) {
-                    case 'thinking':
-                        thinkingEl = addThinkingIndicator();
-                        break;
-
-                    case 'guardrail':
-                        assistantBubble = addChatMessage('assistant', event.message);
-                        break;
-
-                    case 'deals':
-                        removeThinkingIndicator();
-                        if (event.deals && event.deals.length > 0) {
-                            addDealCards(event.deals);
-                        }
-                        break;
-
-                    case 'token':
-                        removeThinkingIndicator();
-                        if (!assistantBubble) {
-                            assistantBubble = addChatMessage('assistant', '');
-                            assistantBubble.classList.add('streaming');
-                        }
-                        fullResponse += event.content;
-                        assistantBubble.textContent = fullResponse;
-                        chatMessages.scrollTop = chatMessages.scrollHeight;
-                        break;
-
-                    case 'done':
-                        removeThinkingIndicator();
-                        if (assistantBubble) {
-                            assistantBubble.classList.remove('streaming');
-                            // Clean suggestion line from displayed text
-                            const text = assistantBubble.textContent;
-                            const sugIdx = text.indexOf('SUGGESTIONS:');
-                            if (sugIdx > -1) {
-                                assistantBubble.textContent = text.substring(0, sugIdx).trim();
-                            }
-                        }
-                        if (event.full_response) {
-                            state.chatHistory.push({
-                                role: 'assistant',
-                                content: event.full_response,
-                            });
-                        }
-                        if (event.suggestions && event.suggestions.length > 0) {
-                            addSuggestionChips(event.suggestions);
-                        }
-                        break;
-                }
+                _processSSELine(line, ctx);
             }
+        }
+
+        // Process any remaining data in buffer
+        if (buffer.trim()) {
+            for (const line of buffer.split('\n')) {
+                _processSSELine(line, ctx);
+            }
+        }
+
+        // Safety: render pending deals if done event was missed
+        if (ctx.pendingDeals) {
+            if (!ctx.assistantBubble) {
+                ctx.assistantBubble = addChatMessage('assistant', 'Here are some deals:');
+            }
+            addDealCards(ctx.pendingDeals);
+            if (!ctx.doneReceived) addSuggestionChips();
         }
     } catch (err) {
         if (err.name !== 'AbortError') {
             removeThinkingIndicator();
             addChatMessage('assistant', 'Something went wrong. Please try again.');
+            addSuggestionChips();
         }
     } finally {
         state.chatStreaming = false;

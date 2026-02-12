@@ -569,3 +569,11 @@ class TestParseSuggestions:
         text = "Deals!\nSUGGESTIONS: A||B|  |C"
         main, suggestions = _parse_suggestions(text)
         assert suggestions == ["A", "B", "C"]
+
+    def test_inline_suggestions_same_line(self):
+        """SUGGESTIONS on same line as response text (no newline before it)."""
+        text = "Here are 4 chicken deals to consider. SUGGESTIONS: Show me beef|Any deals under $5?|What about seafood?"
+        main, suggestions = _parse_suggestions(text)
+        assert main == "Here are 4 chicken deals to consider."
+        assert len(suggestions) == 3
+        assert "Show me beef" in suggestions

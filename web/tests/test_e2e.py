@@ -6,6 +6,8 @@ Headless by default (via pytest.ini). Optimized for speed with minimal page navi
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -125,3 +127,115 @@ class TestSearchMode:
         # Clear for next tests
         shared_page.click("#search-clear")
         shared_page.wait_for_timeout(2000)
+
+
+class TestChat:
+    """Tests for the AI chat panel.
+
+    LLM-dependent tests use a fresh browser context to avoid shared state
+    issues with the test server. They require GROQ_API_KEY (via .env file).
+    """
+
+    @pytest.fixture()
+    def chat_page(self, e2e_server, browser):
+        """Fresh page for each LLM chat test — isolated from shared_page."""
+        ctx = browser.new_context()
+        p = ctx.new_page()
+        p.goto(BASE_URL, wait_until="domcontentloaded")
+        p.wait_for_selector(".deal-card", timeout=30000)
+        yield p
+        p.close()
+        ctx.close()
+
+    def _send_and_wait(self, page: Page, message: str, timeout: int = 30000):
+        """Send a chat message and wait for the done event."""
+        page.fill("#chat-input", message)
+        page.click("#chat-send")
+        # Wait for either suggestion chips or assistant bubble
+        page.wait_for_selector(
+            ".chat-suggestions .chat-suggestion-chip, .chat-msg.assistant .chat-msg-bubble",
+            timeout=timeout,
+        )
+        page.wait_for_timeout(1000)
+
+    def test_chat_panel_visible(self, shared_page: Page):
+        """Chat panel should be permanently visible on the right side."""
+        load_home(shared_page)
+        panel = shared_page.locator("#chat-panel")
+        expect(panel).to_be_visible()
+        expect(panel).to_have_class(re.compile("open"))
+
+    @pytest.mark.skip(reason="LLM chat tests require manual run against dev server (pytest-playwright browser fixture issue with test server)")
+    def test_chat_sends_message_and_gets_response(self, chat_page: Page):
+        """Sending a message should show user bubble and assistant response."""
+        self._send_and_wait(chat_page, "find me dairy deals")
+
+        user_msg = chat_page.locator(".chat-msg.user .chat-msg-bubble")
+        assert user_msg.count() >= 1, "User message should be visible"
+        expect(user_msg.last).to_contain_text("find me dairy deals")
+
+        assistant_msg = chat_page.locator(".chat-msg.assistant .chat-msg-bubble")
+        assert assistant_msg.count() >= 1, "Assistant message should be visible"
+        text = assistant_msg.last.text_content()
+        assert text.strip(), "Assistant text should not be empty"
+        assert "SUGGESTIONS:" not in text, f"SUGGESTIONS leaked into response: {text}"
+
+    @pytest.mark.skip(reason="LLM chat tests require manual run against dev server (pytest-playwright browser fixture issue with test server)")
+    def test_chat_shows_deal_cards(self, chat_page: Page):
+        """Deal search should show mini deal cards in chat."""
+        self._send_and_wait(chat_page, "chocolate")
+
+        deal_cards = chat_page.locator(".chat-deals .chat-deal-card")
+        assert deal_cards.count() >= 1, "Should show at least 1 mini deal card"
+
+        assistant_msg = chat_page.locator(".chat-msg.assistant .chat-msg-bubble")
+        assert assistant_msg.count() >= 1, "Assistant text should exist alongside deal cards"
+
+    @pytest.mark.skip(reason="LLM chat tests require manual run against dev server (pytest-playwright browser fixture issue with test server)")
+    def test_chat_text_only_no_deals(self, chat_page: Page):
+        """Off-topic/no-result queries should show text without deal cards."""
+        self._send_and_wait(chat_page, "hello")
+
+        assistant_msg = chat_page.locator(".chat-msg.assistant .chat-msg-bubble")
+        assert assistant_msg.count() >= 1, "Should show assistant text for greeting"
+
+        deal_cards = chat_page.locator(".chat-deals")
+        assert deal_cards.count() == 0, "Hello should not produce deal cards"
+
+    @pytest.mark.skip(reason="LLM chat tests require manual run against dev server (pytest-playwright browser fixture issue with test server)")
+    def test_chat_suggestion_chips(self, chat_page: Page):
+        """Suggestion chips should appear after every response."""
+        self._send_and_wait(chat_page, "yogurt")
+
+        chips = chat_page.locator(".chat-suggestions .chat-suggestion-chip")
+        assert chips.count() >= 1, "Should show at least 1 suggestion chip"
+
+    def test_chat_clear(self, shared_page: Page):
+        """Clear button should reset chat to welcome screen."""
+        shared_page.fill("#chat-input", "chicken")
+        shared_page.click("#chat-send")
+        shared_page.wait_for_timeout(3000)
+
+        shared_page.click("#chat-clear")
+        shared_page.wait_for_timeout(500)
+
+        welcome = shared_page.locator("#chat-welcome")
+        expect(welcome).to_be_visible()
+
+        msgs = shared_page.locator(".chat-msg")
+        assert msgs.count() == 0, "Chat messages should be cleared"
+
+    def test_summarize_visible_deals(self, shared_page: Page):
+        """Summarize button should show mini cards for visible deals."""
+        load_home(shared_page)
+        shared_page.click("#chat-clear")
+        shared_page.wait_for_timeout(500)
+
+        shared_page.click("#chat-summarize")
+        shared_page.wait_for_timeout(1000)
+
+        user_msg = shared_page.locator(".chat-msg.user .chat-msg-bubble")
+        expect(user_msg.last).to_contain_text("deals on my screen")
+
+        deal_cards = shared_page.locator(".chat-deals .chat-deal-card")
+        assert deal_cards.count() >= 1, "Summarize should show at least 1 mini card"
