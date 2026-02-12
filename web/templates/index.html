@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Safeway Deals</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <div class="brand">
+                <div class="brand-logo">S</div>
+                <div>
+                    <h1 class="brand-title">Safeway Deals</h1>
+                    <p class="brand-subtitle">Your weekly savings, all in one place</p>
+                </div>
+            </div>
+            <div class="search-container">
+                <div class="search-box">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input type="text" id="search-input" placeholder="Search deals, products, categories..." autocomplete="off">
+                    <button id="search-clear" class="search-clear" title="Clear search">&times;</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="filter-bar">
+            <div class="filter-group">
+                <label for="filter-category">Category</label>
+                <select id="filter-category">
+                    <option value="">All Categories</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-type">Offer Type</label>
+                <select id="filter-type">
+                    <option value="">All Types</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-deal-type">Deal Type</label>
+                <select id="filter-deal-type">
+                    <option value="">All Deal Types</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-expiry">Expiry</label>
+                <select id="filter-expiry">
+                    <option value="">Any Time</option>
+                    <option value="today">Expiring Today</option>
+                    <option value="week">This Week</option>
+                    <option value="month">This Month</option>
+                </select>
+            </div>
+            <div class="filter-group filter-toggle">
+                <label class="toggle-label">
+                    <input type="checkbox" id="filter-has-products">
+                    <span>Has Products</span>
+                </label>
+            </div>
+            <div class="results-info" id="results-info"></div>
+        </div>
+
+        <div class="design-picker" id="design-picker">
+            <span class="picker-label">Card Style</span>
+            <div class="picker-options">
+                <button class="picker-btn active" data-style="1" title="Classic Coupon"><span class="picker-icon">&#9986;</span><span class="picker-name">Coupon</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="2" title="Modern Minimal"><span class="picker-icon">&#9634;</span><span class="picker-name">Minimal</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="3" title="Split Feature"><span class="picker-icon">&#9776;</span><span class="picker-name">Split</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="4" title="Stacked Badge"><span class="picker-icon">&#9733;</span><span class="picker-name">Badge</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="5" title="Compact Horizontal"><span class="picker-icon">&#9868;</span><span class="picker-name">Compact</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="6" title="Glass Card"><span class="picker-icon">&#9830;</span><span class="picker-name">Glass</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="7" title="Magazine"><span class="picker-icon">&#9998;</span><span class="picker-name">Magazine</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="8" title="Dark Mode"><span class="picker-icon">&#9790;</span><span class="picker-name">Dark</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="9" title="Price Focus"><span class="picker-icon">&#9041;</span><span class="picker-name">Price</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+                <button class="picker-btn" data-style="10" title="Grocery List"><span class="picker-icon">&#9745;</span><span class="picker-name">List</span><span class="picker-votes"><span class="vote-btn vote-up" data-vote="up" title="Like this style">&#9650;</span><span class="vote-btn vote-down" data-vote="down" title="Hide this style">&#9660;</span></span></button>
+            </div>
+            <button class="picker-reset-btn" id="reset-votes" title="Show all hidden styles">Reset Hidden</button>
+        </div>
+
+        <div class="search-expanded" id="search-expanded"></div>
+
+        <div class="loading-indicator" id="loading">
+            <div class="spinner"></div>
+            <span>Loading deals...</span>
+        </div>
+
+        <div class="deals-grid" id="deals-grid"></div>
+
+        <div class="pagination" id="pagination">
+            <button id="prev-btn" class="page-btn" disabled>&larr; Previous</button>
+            <span id="page-info" class="page-info"></span>
+            <button id="next-btn" class="page-btn">Next &rarr;</button>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

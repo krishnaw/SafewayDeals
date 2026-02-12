@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Search cache (regenerated from data files)
+search/cache/
+
+# Environment
+.env
+.venv/
+env/
+
+# Node.js (legacy, safe to delete)
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime
+web/.server.pid
+web/server.log*
+
+# Claude Code
+.claude/
