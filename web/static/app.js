@@ -742,9 +742,14 @@ searchInput.addEventListener('input', () => {
     searchClear.classList.toggle('visible', val.length > 0);
 
     clearTimeout(state.debounceTimer);
+    if (val.length === 0) {
+        exitSearchMode();
+        return;
+    }
+    if (val.trim().length < 2) return;
     state.debounceTimer = setTimeout(() => {
         startSearch(val);
-    }, 300);
+    }, 600);
 });
 
 searchClear.addEventListener('click', () => {

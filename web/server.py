@@ -273,15 +273,44 @@ async def search_stream(
 
         # Try query expansion for natural language queries
         expanded = await loop.run_in_executor(None, lambda: expand_query(q))
-        search_q = expanded if expanded else q
 
         if expanded:
             yield f"data: {json.dumps({'type': 'expanded', 'original': q, 'expanded': expanded})}\n\n"
 
-        # Run search in thread pool to avoid blocking
-        results = await loop.run_in_executor(
-            None, lambda: search(search_q, _records, _embeddings, _model, top_k=top_k)
-        )
+            # Search each expanded term individually, then merge best scores
+            terms = [t.strip() for t in expanded.split(",") if t.strip()]
+
+            def _multi_search():
+                from search.search import DealResult
+                merged: dict[str, DealResult] = {}
+                # Track how many terms matched each deal (multi-term hit = more relevant)
+                term_hits: dict[str, int] = {}
+                for term in terms:
+                    hits = search(term, _records, _embeddings, _model, top_k=top_k)
+                    for deal in hits:
+                        term_hits[deal.offer_id] = term_hits.get(deal.offer_id, 0) + 1
+                        if deal.offer_id not in merged or deal.score > merged[deal.offer_id].score:
+                            merged[deal.offer_id] = deal
+                # Boost deals matched by multiple expanded terms (more relevant to theme)
+                for oid, deal in merged.items():
+                    hits_count = term_hits.get(oid, 1)
+                    if hits_count >= 2:
+                        deal.score *= 1.0 + 0.1 * min(hits_count - 1, 3)  # up to 1.3x
+                ranked = sorted(merged.values(), key=lambda d: d.score, reverse=True)
+                ranked = ranked[:top_k]
+                # Apply adaptive cutoff to merged results (removes noisy tail)
+                if ranked:
+                    top_score = ranked[0].score
+                    cutoff = top_score * 0.45
+                    ranked = [d for d in ranked if d.score >= cutoff]
+                return ranked
+
+            results = await loop.run_in_executor(None, _multi_search)
+        else:
+            # Single/direct query — search as-is
+            results = await loop.run_in_executor(
+                None, lambda: search(q, _records, _embeddings, _model, top_k=top_k)
+            )
 
         # Stream in batches of 4 (one row)
         batch = []

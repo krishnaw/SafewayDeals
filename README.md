@@ -7,7 +7,7 @@ Search, browse, and explore Safeway grocery deals with intelligent search and a 
 - **401 deals** with **4,057 qualifying products** from Safeway store #1197
 - **Intelligent search** combining keyword, fuzzy, and semantic matching
 - **Natural language queries** — ask "something for a headache" and find Tylenol, Advil, etc.
-- **NLQ expansion** via Claude Haiku for multi-word query interpretation
+- **NLQ expansion** via Groq Llama 3.1 for multi-word query interpretation
 - **10 card designs** — Coupon, Minimal, Split, Badge, Compact, Glass, Magazine, Dark, Price, List
 - **5 filters** — Category, Offer Type, Deal Type, Expiry, Has Products
 - **SSE streaming** — results appear progressively as they're found
@@ -16,7 +16,7 @@ Search, browse, and explore Safeway grocery deals with intelligent search and a 
 ## Prerequisites
 
 - **Python 3.11+**
-- **Anthropic API key** (optional — enables NLQ query expansion for natural language searches)
+- **Groq API key** (optional — enables NLQ query expansion for natural language searches; free at https://console.groq.com/)
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ pip install -r requirements.txt
 
 # (Optional) Set up NLQ expansion
 cp .env.example .env
-# Edit .env and add your Anthropic API key
+# Edit .env and add your Groq API key (free at console.groq.com)
 
 # Start the web server
 powershell -ExecutionPolicy Bypass -File web/server.ps1 start
@@ -64,15 +64,16 @@ SafewayDeals/
 ├── search/                     # Search engine
 │   ├── index.py                # Data loading, embedding computation & caching
 │   ├── search.py               # Keyword, fuzzy, semantic search + composite ranking
-│   ├── expand.py               # NLQ query expansion via Claude Haiku
+│   ├── expand.py               # NLQ query expansion via Groq Llama 3.1
 │   ├── cli.py                  # Interactive CLI interface
-│   └── tests/                  # 103 search tests
+│   └── tests/                  # 148 search tests
 │       ├── test_keyword.py     # Field-weighted keyword scoring
 │       ├── test_fuzzy.py       # Fuzzy matching & typo correction
 │       ├── test_semantic.py    # Semantic similarity search
 │       ├── test_search_unified.py  # Composite search logic
 │       ├── test_integration.py # Real-data integration tests
-│       └── test_ranking.py     # Ranking quality assertions
+│       ├── test_ranking.py     # Ranking quality assertions
+│       └── test_expand.py      # NLQ expansion (mock + live integration)
 │
 └── web/                        # Web portal
     ├── server.py               # FastAPI backend (5 endpoints, SSE streaming)
@@ -81,8 +82,8 @@ SafewayDeals/
     ├── static/
     │   ├── styles.css          # 10 card designs, responsive grid
     │   └── app.js              # SPA logic, SSE streaming, filters
-    └── tests/                  # 29 web tests
-        ├── test_server.py      # 21 API tests
+    └── tests/                  # 35 web tests
+        ├── test_server.py      # 27 API tests (includes NLQ stream tests)
         └── test_e2e.py         # 8 Playwright E2E tests
 ```
 
@@ -103,7 +104,7 @@ Additional ranking signals:
 - **Adaptive cutoff** — automatically trims low-confidence noise
 - **Gibberish gate** — rejects nonsense queries (e.g., "asdf")
 
-For multi-word natural language queries (e.g., "something for breakfast"), the NLQ expander sends the query to Claude Haiku to extract concrete product keywords before searching.
+For multi-word natural language queries (e.g., "something for breakfast"), the NLQ expander sends the query to Groq Llama 3.1 8B to extract concrete product keywords constrained to store categories. Each expanded term is searched individually and results are merged with multi-term boosting and adaptive cutoff.
 
 ## Configuration
 
@@ -111,19 +112,20 @@ Create a `.env` file (or copy `.env.example`):
 
 ```env
 # Required for NLQ query expansion (optional — search works without it)
-ANTHROPIC_API_KEY=sk-ant-...
+# Free key at https://console.groq.com/
+GROQ_API_KEY=gsk_...
 ```
 
 ## Running Tests
 
 ```bash
-# All tests (124+)
+# All tests (180)
 python -m pytest search/tests/ web/tests/ -v
 
-# Search tests only (103)
+# Search tests only (148)
 python -m pytest search/tests/ -v
 
-# Web API tests only (21)
+# Web API tests only (27)
 python -m pytest web/tests/test_server.py -v
 
 # E2E browser tests (8) — requires playwright install
@@ -137,7 +139,7 @@ python -m pytest web/tests/test_e2e.py -v
 - **sentence-transformers** — semantic embeddings (all-MiniLM-L6-v2)
 - **RapidFuzz** — fuzzy string matching
 - **NumPy** — vector operations
-- **Anthropic SDK** — NLQ query expansion via Claude Haiku
+- **Groq SDK** — NLQ query expansion via Llama 3.1 8B Instant (free tier)
 - **Vanilla HTML/CSS/JS** — zero frontend framework dependencies
 - **Playwright** — E2E testing
 - **pytest** — test framework

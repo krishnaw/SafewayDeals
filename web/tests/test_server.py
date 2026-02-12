@@ -171,3 +171,86 @@ class TestSearchStreamEndpoint:
             results.extend(json.loads(payload))
         # Should find lotion-related results via fuzzy matching
         assert len(results) > 0
+
+
+def _has_groq_key() -> bool:
+    from search.expand import _get_api_key
+    return _get_api_key() is not None
+
+
+def _parse_sse(text: str) -> tuple[list[dict], list[dict]]:
+    """Parse SSE response into (metadata_events, deal_results)."""
+    meta = []
+    results = []
+    for line in text.strip().split("\n"):
+        if not line.startswith("data:"):
+            continue
+        payload = line[len("data:"):].strip()
+        if payload == "[END]":
+            continue
+        parsed = json.loads(payload)
+        if isinstance(parsed, dict):
+            meta.append(parsed)
+        elif isinstance(parsed, list):
+            results.extend(parsed)
+    return meta, results
+
+
+@pytest.mark.skipif(not _has_groq_key(), reason="GROQ_API_KEY not set")
+class TestNLQSearchStream:
+    """Tests for NLQ query expansion in the SSE search endpoint."""
+
+    def test_nlq_emits_expanded_event(self, client):
+        """Multi-word NLQ query should emit an 'expanded' SSE event."""
+        resp = client.get("/api/search/stream?q=healthy+snacks")
+        meta, results = _parse_sse(resp.text)
+        expanded_events = [m for m in meta if m.get("type") == "expanded"]
+        assert len(expanded_events) == 1
+        assert expanded_events[0]["original"] == "healthy snacks"
+        assert len(expanded_events[0]["expanded"]) > 0
+
+    def test_single_word_no_expanded_event(self, client):
+        """Single-word queries should NOT trigger expansion."""
+        resp = client.get("/api/search/stream?q=milk")
+        meta, results = _parse_sse(resp.text)
+        expanded_events = [m for m in meta if m.get("type") == "expanded"]
+        assert len(expanded_events) == 0
+
+    def test_nlq_returns_relevant_results(self, client):
+        """NLQ 'cleaning supplies' should return cleaning-related deals."""
+        resp = client.get("/api/search/stream?q=cleaning+supplies")
+        meta, results = _parse_sse(resp.text)
+        assert len(results) >= 3
+        names = [r["offer_name"].lower() for r in results[:10]]
+        cleaning_words = {"tide", "lysol", "windex", "scrubbing", "detergent",
+                          "cleaner", "febreze", "bounty", "paper towel"}
+        matched = sum(1 for n in names if any(w in n for w in cleaning_words))
+        assert matched >= 2, f"Expected cleaning deals in top 10, got: {names}"
+
+    def test_nlq_pain_relief_finds_medicine(self, client):
+        resp = client.get("/api/search/stream?q=pain+relief")
+        meta, results = _parse_sse(resp.text)
+        assert len(results) >= 1
+        names = [r["offer_name"].lower() for r in results[:5]]
+        med_words = {"tylenol", "motrin", "advil", "nervive", "aspercreme"}
+        matched = sum(1 for n in names if any(w in n for w in med_words))
+        assert matched >= 1, f"Expected medicine deals, got: {names}"
+
+    def test_nlq_results_have_scores_above_zero(self, client):
+        resp = client.get("/api/search/stream?q=protein+rich")
+        meta, results = _parse_sse(resp.text)
+        assert len(results) >= 1
+        for r in results:
+            assert r["score"] > 0
+
+    def test_nlq_noisy_tail_trimmed(self, client):
+        """Results should not have very low scores relative to the top."""
+        resp = client.get("/api/search/stream?q=pet+food")
+        meta, results = _parse_sse(resp.text)
+        if len(results) >= 2:
+            top_score = results[0]["score"]
+            worst_score = results[-1]["score"]
+            # Worst result should be at least 45% of top (our cutoff)
+            assert worst_score >= top_score * 0.40, (
+                f"Noisy tail: worst={worst_score:.3f}, top={top_score:.3f}"
+            )
